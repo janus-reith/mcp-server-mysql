@@ -1,9 +1,16 @@
 import * as mysql2 from "mysql2/promise";
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import {
-  executeReadOnlyQuery,
-  executeWriteQuery,
-} from "../../../dist/src/db/index.js";
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from "vitest";
+
+let executeReadOnlyQuery: (sql: string) => Promise<any>;
+let executeWriteQuery: (sql: string) => Promise<any>;
 
 // Create test environment for multi-DB mode
 describe("Multi-DB Mode", () => {
@@ -24,6 +31,12 @@ describe("Multi-DB Mode", () => {
     // Configure schema-specific permissions
     process.env.SCHEMA_INSERT_PERMISSIONS =
       "multi_db_test_1:true,multi_db_test_2:false";
+
+    // Import AFTER env is set so config constants are correct in-process
+    vi.resetModules();
+    const mod = await import("../../../src/db/index.js");
+    executeReadOnlyQuery = mod.executeReadOnlyQuery;
+    executeWriteQuery = mod.executeWriteQuery;
 
     // Create connection pool for testing
     const config: any = {
@@ -115,6 +128,10 @@ describe("Multi-DB Mode", () => {
 
     // Clean up environment variables
     delete process.env.SCHEMA_INSERT_PERMISSIONS;
+    delete process.env.ALLOW_INSERT_OPERATION;
+    delete process.env.ALLOW_UPDATE_OPERATION;
+    delete process.env.ALLOW_DELETE_OPERATION;
+    delete process.env.ALLOW_DDL_OPERATION;
   });
 
   // Test querying from multiple databases in multi-DB mode
@@ -142,11 +159,11 @@ describe("Multi-DB Mode", () => {
 
   // Test USE statement in multi-DB mode
   it("should handle USE statements properly", async () => {
-    // Use the first database and then query without schema prefix
-    const result = await executeReadOnlyQuery(`
-      USE multi_db_test_1;
-      SELECT * FROM test_table;
-    `);
+    // Multi-statement SQL is intentionally rejected by the server for safety.
+    // Instead, use fully-qualified names in multi-DB mode.
+    const result = await executeReadOnlyQuery(
+      "SELECT * FROM multi_db_test_1.test_table",
+    );
 
     expect(result.isError).toBe(false);
     const data = JSON.parse(result.content[0].text);

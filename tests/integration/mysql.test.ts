@@ -1,12 +1,19 @@
 import * as mysql2 from "mysql2/promise";
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import * as dotenv from "dotenv";
 import {
-  executeReadOnlyQuery,
-  executeWriteQuery,
-} from "../../dist/src/db/index.js";
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from "vitest";
+import * as dotenv from "dotenv";
 import * as path from "path";
 import { fileURLToPath } from "url";
+
+let executeReadOnlyQuery: (sql: string) => Promise<any>;
+let executeWriteQuery: (sql: string) => Promise<any>;
 
 // Set test directory path
 const __filename = fileURLToPath(import.meta.url);
@@ -16,6 +23,7 @@ const __dirname = path.dirname(__filename);
 process.env.ALLOW_INSERT_OPERATION = "true";
 process.env.ALLOW_UPDATE_OPERATION = "true";
 process.env.ALLOW_DELETE_OPERATION = "true";
+process.env.ALLOW_DDL_OPERATION = process.env.ALLOW_DDL_OPERATION || "false";
 
 // Load test environment variables
 dotenv.config({ path: path.resolve(__dirname, "../../.env.test") });
@@ -24,6 +32,14 @@ describe("MySQL Integration", () => {
   let pool: any;
 
   beforeAll(async () => {
+    // Ensure a clean module graph so config constants reflect current env.
+    vi.resetModules();
+
+    // Import after env is set so config constants are correct in-process
+    const mod = await import("../../src/db/index.js");
+    executeReadOnlyQuery = mod.executeReadOnlyQuery;
+    executeWriteQuery = mod.executeWriteQuery;
+
     // Create a connection pool for testing
     const config: any = {
       host: process.env.MYSQL_HOST || "127.0.0.1",
@@ -284,6 +300,11 @@ describe("MySQL Integration", () => {
       process.env.ALLOW_INSERT_OPERATION = "false";
 
       try {
+        // Reload module so config constants see the new env flag
+        vi.resetModules();
+        const mod = await import("../../src/db/index.js");
+        executeReadOnlyQuery = mod.executeReadOnlyQuery;
+
         const result = await executeReadOnlyQuery(
           'INSERT INTO write_ops_test (name, value) VALUES ("Blocked Insert", 100)',
         );
@@ -312,4 +333,3 @@ describe("MySQL Integration", () => {
     });
   });
 });
-

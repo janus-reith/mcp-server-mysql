@@ -61,11 +61,11 @@ export function parseMySQLConnectionString(
   const config: MySQLConnectionConfig = {};
 
   // Remove 'mysql' command at the start if present
-  let cleanedString = connectionString.trim().replace(/^mysql\s+/, '');
+  let cleanedString = connectionString.trim().replace(/^mysql\s+/, "");
 
   // Parse flags and options
   const tokens = [];
-  let currentToken = '';
+  let currentToken = "";
   let inQuotes = false;
   let quoteChar: string | null = null;
 
@@ -76,10 +76,10 @@ export function parseMySQLConnectionString(
       // Toggle quote state without adding the quote character
       inQuotes = !inQuotes;
       quoteChar = inQuotes ? char : null;
-    } else if (char === ' ' && !inQuotes) {
+    } else if (char === " " && !inQuotes) {
       if (currentToken) {
         tokens.push(currentToken);
-        currentToken = '';
+        currentToken = "";
       }
     } else {
       currentToken += char;
@@ -95,75 +95,85 @@ export function parseMySQLConnectionString(
     const token = tokens[i];
 
     // Check for combined short options (e.g., -uUSER, -pPASS, -hHOST, -PPORT)
-    if (token.startsWith('-') && !token.startsWith('--')) {
+    if (token.startsWith("-") && !token.startsWith("--")) {
       const flag = token[1];
       let value = token.substring(2);
 
       // If no value attached, check next token
-      if (!value && i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) {
+      if (!value && i + 1 < tokens.length && !tokens[i + 1].startsWith("-")) {
         value = tokens[i + 1];
         i++;
       }
 
       switch (flag) {
-        case 'h':
+        case "h":
           config.host = value;
           break;
-        case 'P': {
+        case "P": {
           const port = parseInt(value, 10);
-          if (Number.isNaN(port) || !Number.isFinite(port) || port < 1 || port > 65535) {
+          if (
+            Number.isNaN(port) ||
+            !Number.isFinite(port) ||
+            port < 1 ||
+            port > 65535
+          ) {
             throw new Error(`Invalid port: ${value}`);
           }
           config.port = port;
           break;
         }
-        case 'u':
+        case "u":
           config.user = value;
           break;
-        case 'p':
+        case "p":
           config.password = value;
           break;
-        case 'S':
+        case "S":
           config.socketPath = value;
           break;
       }
     }
     // Check for long options (e.g., --host=HOST, --port=PORT)
-    else if (token.startsWith('--')) {
-      const [flag, ...valueParts] = token.substring(2).split('=');
-      let value = valueParts.join('=');
+    else if (token.startsWith("--")) {
+      const [flag, ...valueParts] = token.substring(2).split("=");
+      let value = valueParts.join("=");
 
       // If no value with =, check next token
-      if (!value && i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) {
+      if (!value && i + 1 < tokens.length && !tokens[i + 1].startsWith("-")) {
         value = tokens[i + 1];
         i++;
       }
 
       switch (flag) {
-        case 'host':
+        case "host":
           config.host = value;
           break;
-        case 'port': {
+        case "port": {
           const port = parseInt(value, 10);
-          if (Number.isNaN(port) || !Number.isFinite(port) || port < 1 || port > 65535) {
+          if (
+            Number.isNaN(port) ||
+            !Number.isFinite(port) ||
+            port < 1 ||
+            port > 65535
+          ) {
             throw new Error(`Invalid port: ${value}`);
           }
           config.port = port;
           break;
         }
-        case 'user':
+        case "user":
           config.user = value;
           break;
-        case 'password':
+        case "password":
           config.password = value;
           break;
-        case 'socket':
+        case "socket":
           config.socketPath = value;
           break;
       }
     }
     // Last positional argument (not starting with -) is the database name
-    else if (!token.startsWith('-')) {
+    else if (!token.startsWith("-")) {
       // Only consider it a database if it's one of the last arguments and not part of a flag
       config.database = token;
     }

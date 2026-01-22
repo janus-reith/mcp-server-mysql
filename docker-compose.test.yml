@@ -1,0 +1,19 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mcp-mysql-test
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mcp_test
+      MYSQL_USER: mcp_test
+      MYSQL_PASSWORD: mcp_test_password
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-proot"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --max_connections=200

@@ -1,31 +1,31 @@
-import * as mysql2 from 'mysql2/promise';
-import * as dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import * as mysql2 from "mysql2/promise";
+import * as dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, resolve } from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Load test environment variables
-dotenv.config({ path: resolve(__dirname, '../.env.test') });
+dotenv.config({ path: resolve(__dirname, "../.env.test") });
 
 // Logging configuration
-const ENABLE_LOGGING = process.env.ENABLE_LOGGING === '1'
+const ENABLE_LOGGING = process.env.ENABLE_LOGGING === "1";
 
-type LogType = 'info' | 'error'
+type LogType = "info" | "error";
 
-function log(type: LogType = 'info', ...args: any[]): void {
-  if (!ENABLE_LOGGING) return
+function log(type: LogType = "info", ...args: any[]): void {
+  if (!ENABLE_LOGGING) return;
 
   switch (type) {
-    case 'info':
-      console.info(...args)
-      break
-    case 'error':
-      console.error(...args)
-      break
+    case "info":
+      console.info(...args);
+      break;
+    case "error":
+      console.error(...args);
+      break;
     default:
-      console.log(...args)
+      console.log(...args);
   }
 }
 
@@ -38,30 +38,29 @@ async function setupTestDatabase() {
           socketPath: process.env.MYSQL_SOCKET_PATH,
         }
       : {
-          host: process.env.MYSQL_HOST || '127.0.0.1',
+          host: process.env.MYSQL_HOST || "127.0.0.1",
           port: Number(process.env.MYSQL_PORT) || 3306,
-        }
-    ),
-    user: process.env.MYSQL_USER || 'root',
-    password: process.env.MYSQL_PASS || 'root', // Default to 'root' if not specified
-    multipleStatements: true
+        }),
+    user: process.env.MYSQL_USER || "root",
+    password: process.env.MYSQL_PASS || "root", // Default to 'root' if not specified
+    multipleStatements: true,
   };
 
   // First connect without database to create it if needed
   const connection = await mysql2.createConnection(config);
 
   // Use a unique database name for tests to avoid conflicts with existing tables
-  const dbName = process.env.MYSQL_DB || 'mcp_test_db';
+  const dbName = process.env.MYSQL_DB || "mcp_test_db";
 
   try {
     // Create database if it doesn't exist
     await connection.query(`CREATE DATABASE IF NOT EXISTS ${dbName}`);
-    
+
     // Switch to the test database
     await connection.query(`USE ${dbName}`);
 
     // Temporarily disable foreign key checks to allow dropping tables
-    await connection.query('SET FOREIGN_KEY_CHECKS = 0');
+    await connection.query("SET FOREIGN_KEY_CHECKS = 0");
 
     // Create test tables
     await connection.query(`
@@ -111,13 +110,18 @@ async function setupTestDatabase() {
     `);
 
     // Re-enable foreign key checks
-    await connection.query('SET FOREIGN_KEY_CHECKS = 1');
+    await connection.query("SET FOREIGN_KEY_CHECKS = 1");
 
-    log('info', 'Test database setup completed successfully');
+    log("info", "Test database setup completed successfully");
   } catch (error) {
-    log('error', 'Error setting up test database:', error);
+    log("error", "Error setting up test database:", error);
+    const message = error instanceof Error ? error.message : String(error);
     if (process.env.CI) {
-      log('error', 'Database setup failed, but continuing with tests:', error.message);
+      log(
+        "error",
+        "Database setup failed, but continuing with tests:",
+        message,
+      );
     } else {
       throw error;
     }
@@ -127,6 +131,7 @@ async function setupTestDatabase() {
 }
 
 // Run the setup but don't exit on error
-setupTestDatabase().catch(error => {
-  console.error('Database setup failed, but continuing with tests:', error.message);
-}); 
+setupTestDatabase().catch((error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("Database setup failed, but continuing with tests:", message);
+});

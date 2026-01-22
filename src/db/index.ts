@@ -7,11 +7,19 @@ import {
   isUpdateAllowedForSchema,
   isDeleteAllowedForSchema,
 } from "./permissions.js";
-import { extractSchemaFromQuery, getQueryTypes } from "./utils.js";
+import {
+  extractSchemaFromQuery,
+  getQueryTypes,
+  isQueryBlockedByDenylist,
+} from "./utils.js";
 
 import * as mysql2 from "mysql2/promise";
 import { log } from "./../utils/index.js";
-import { mcpConfig as config, MYSQL_DISABLE_READ_ONLY_TRANSACTIONS } from "./../config/index.js";
+import {
+  mcpConfig as config,
+  MYSQL_DISABLE_READ_ONLY_TRANSACTIONS,
+  MYSQL_TABLE_DENYLIST,
+} from "./../config/index.js";
 
 // Force read-only mode in multi-DB mode unless explicitly configured otherwise
 if (isMultiDbMode && process.env.MULTI_DB_WRITE_MODE !== "true") {
@@ -49,8 +57,11 @@ const getPool = (): Promise<mysql2.Pool> => {
   return poolPromise;
 };
 
-async function executeQuery<T>(sql: string, params: string[] = []): Promise<T> {
-  let connection;
+async function executeQuery<T>(
+  sql: string,
+  params: Array<string | number | boolean | null> = [],
+): Promise<T> {
+  let connection: mysql2.PoolConnection | undefined;
   try {
     const pool = await getPool();
     connection = await pool.getConnection();
@@ -69,7 +80,7 @@ async function executeQuery<T>(sql: string, params: string[] = []): Promise<T> {
 
 // @INFO: New function to handle write operations
 async function executeWriteQuery<T>(sql: string): Promise<T> {
-  let connection;
+  let connection: mysql2.PoolConnection | undefined;
   try {
     const pool = await getPool();
     connection = await pool.getConnection();
@@ -93,7 +104,7 @@ async function executeWriteQuery<T>(sql: string): Promise<T> {
       await connection.commit();
 
       // @INFO: Format the response based on operation type
-      let responseText;
+      let responseText: string;
 
       // Check the type of query
       const queryTypes = await getQueryTypes(sql);
@@ -174,8 +185,28 @@ async function executeWriteQuery<T>(sql: string): Promise<T> {
 }
 
 async function executeReadOnlyQuery<T>(sql: string): Promise<T> {
-  let connection;
+  let connection: mysql2.PoolConnection | undefined;
   try {
+    // Denylist enforcement (defense-in-depth)
+    const defaultSchema = process.env.MYSQL_DB || null;
+    const denyCheck = isQueryBlockedByDenylist({
+      sql,
+      denylist: MYSQL_TABLE_DENYLIST,
+      defaultSchema,
+      multiDbMode: isMultiDbMode,
+    });
+    if (denyCheck.blocked) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: ${denyCheck.reason || "Query blocked by MYSQL_TABLE_DENYLIST"}`,
+          },
+        ],
+        isError: true,
+      } as T;
+    }
+
     // Check the type of query
     const queryTypes = await getQueryTypes(sql);
 
@@ -279,7 +310,10 @@ async function executeReadOnlyQuery<T>(sql: string): Promise<T> {
     if (!MYSQL_DISABLE_READ_ONLY_TRANSACTIONS) {
       await connection.query("SET SESSION TRANSACTION READ ONLY");
     } else {
-      log("info", "Read-only transactions disabled via MYSQL_DISABLE_READ_ONLY_TRANSACTIONS=true");
+      log(
+        "info",
+        "Read-only transactions disabled via MYSQL_DISABLE_READ_ONLY_TRANSACTIONS=true",
+      );
     }
 
     // Begin transaction

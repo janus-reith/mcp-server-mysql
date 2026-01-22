@@ -21,6 +21,7 @@ import {
   SCHEMA_DDL_PERMISSIONS,
   SCHEMA_INSERT_PERMISSIONS,
   SCHEMA_UPDATE_PERMISSIONS,
+  MYSQL_TABLE_DENYLIST,
   isMultiDbMode,
   mcpConfig as config,
   MCP_VERSION as version,
@@ -36,10 +37,9 @@ import {
   poolPromise,
 } from "./src/db/index.js";
 
-import path from 'path';
+import path from "path";
 import express, { Request, Response } from "express";
-import { fileURLToPath } from 'url';
-
+import { fileURLToPath } from "url";
 
 log("info", `Starting MySQL MCP server v${version}...`);
 
@@ -190,8 +190,20 @@ export default function createMcpServer({
         table_schema, table_name
     `;
 
-      const queryResult = (await executeReadOnlyQuery<any>(tablesQuery));
-      const tables = JSON.parse(queryResult.content[0].text) as TableRow[];
+      const queryResult = await executeReadOnlyQuery<any>(tablesQuery);
+      const tablesAll = JSON.parse(queryResult.content[0].text) as TableRow[];
+
+      // Filter out denylisted tables from resource listing
+      const denyTable = new Set(
+        MYSQL_TABLE_DENYLIST.map(
+          (t) => `${t.schema ? `${t.schema}.` : ""}${t.table}`,
+        ),
+      );
+      const tables = tablesAll.filter((t) => {
+        const schema = String(t.database || "").toLowerCase();
+        const table = String(t.name || "").toLowerCase();
+        return !denyTable.has(`${schema}.${table}`) && !denyTable.has(table);
+      });
       log("info", `Found ${tables.length} tables`);
 
       // Create resources for each table
@@ -233,6 +245,25 @@ export default function createMcpServer({
 
       if (!tableName) {
         throw new Error(`Invalid resource URI: ${request.params.uri}`);
+      }
+
+      // Block denylisted tables for resource read
+      const tableLower = String(tableName).replace(/`/g, "").toLowerCase();
+      const dbLower = dbName
+        ? String(dbName).replace(/`/g, "").toLowerCase()
+        : null;
+      const denied = MYSQL_TABLE_DENYLIST.some((d) => {
+        if (d.schema) {
+          return (
+            Boolean(dbLower) && d.schema === dbLower && d.table === tableLower
+          );
+        }
+        return d.table === tableLower;
+      });
+      if (denied) {
+        throw new Error(
+          `Access to table '${dbLower ? `${dbLower}.` : ""}${tableLower}' is blocked by MYSQL_TABLE_DENYLIST`,
+        );
       }
 
       // Modify query to include schema information
@@ -279,11 +310,13 @@ export default function createMcpServer({
       const error = err as Error;
       log("error", "Error in CallToolRequest handler:", error);
       return {
-        content: [{
-          type: "text",
-          text: `Error: ${error.message}`
-        }],
-        isError: true
+        content: [
+          {
+            type: "text",
+            text: `Error: ${error.message}`,
+          },
+        ],
+        isError: true,
       };
     }
   });
@@ -384,21 +417,25 @@ export default function createMcpServer({
 }
 
 /**
-* Checks if the current module is the main module (the entry point of the application).
-* This function works for both ES Modules (ESM) and CommonJS.
-* @returns {boolean} - True if the module is the main module, false otherwise.
-*/
+ * Checks if the current module is the main module (the entry point of the application).
+ * This function works for both ES Modules (ESM) and CommonJS.
+ * @returns {boolean} - True if the module is the main module, false otherwise.
+ */
 const isMainModule = () => {
   // 1. Standard check for CommonJS
   // `require.main` refers to the application's entry point module.
   // If it's the same as the current `module`, this file was executed directly.
-  if (typeof require !== 'undefined' && require.main === module) {
+  if (typeof require !== "undefined" && require.main === module) {
     return true;
   }
   // 2. Check for ES Modules (ESM)
   // `import.meta.url` provides the file URL of the current module.
   // `process.argv[1]` provides the path of the executed script.
-  if (typeof import.meta !== 'undefined' && import.meta.url && process.argv[1]) {
+  if (
+    typeof import.meta !== "undefined" &&
+    import.meta.url &&
+    process.argv[1]
+  ) {
     // Convert the `import.meta.url` (e.g., 'file:///path/to/file.js') to a system-standard absolute path.
     const currentModulePath = fileURLToPath(import.meta.url);
     // Resolve `process.argv[1]` (which can be a relative path) to a standard absolute path.
@@ -408,7 +445,7 @@ const isMainModule = () => {
   }
   // Fallback if neither of the above conditions are met.
   return false;
-}
+};
 
 // Start the server if this file is being run directly
 if (isMainModule()) {

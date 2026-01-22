@@ -3,7 +3,7 @@
 > **🚀 This is a modified version optimized for Claude Code with SSH tunnel support**  
 > **Original Author:** [@benborla29](https://github.com/benborla)  
 > **Original Repository:** [https://github.com/benborla/mcp-server-mysql](https://github.com/benborla/mcp-server-mysql)  
-> **License:** MIT  
+> **License:** MIT
 
 ## MCP Server for MySQL based on NodeJS
 
@@ -291,9 +291,7 @@ If you want to clone and run this MCP server directly from the source code, foll
      "mcpServers": {
        "mcp_server_mysql": {
          "command": "/path/to/node",
-         "args": [
-           "/full/path/to/mcp-server-mysql/dist/index.js"
-         ],
+         "args": ["/full/path/to/mcp-server-mysql/dist/index.js"],
          "env": {
            "MYSQL_HOST": "127.0.0.1",
            "MYSQL_PORT": "3306",
@@ -455,10 +453,7 @@ For more control over the MCP server's behavior, you can use these advanced conf
   "mcpServers": {
     "mcp_server_mysql": {
       "command": "/path/to/npx/binary/npx",
-      "args": [
-        "-y",
-        "@benborla29/mcp-server-mysql"
-      ],
+      "args": ["-y", "@benborla29/mcp-server-mysql"],
       "env": {
         // Basic connection settings
         "MYSQL_HOST": "127.0.0.1",
@@ -511,6 +506,7 @@ For scenarios requiring frequent credential rotation or temporary connections, y
 - `MYSQL_CONNECTION_STRING`: MySQL CLI-format connection string (e.g., `mysql --default-auth=mysql_native_password -A -hHOST -PPORT -uUSER -pPASS database_name`)
 
 When `MYSQL_CONNECTION_STRING` is provided, it takes precedence over individual connection settings. This is particularly useful for:
+
 - Rotating credentials that expire frequently
 - Temporary database connections
 - Quick testing with different database configurations
@@ -534,12 +530,19 @@ When `MYSQL_CONNECTION_STRING` is provided, it takes precedence over individual 
 - `ALLOW_UPDATE_OPERATION`: Enable UPDATE operations (default: "false")
 - `ALLOW_DELETE_OPERATION`: Enable DELETE operations (default: "false")
 - `ALLOW_DDL_OPERATION`: Enable DDL operations (default: "false")
+- `MYSQL_TABLE_DENYLIST`: **[NEW]** Comma-separated list of tables the MCP will refuse to access (defense-in-depth). Recommended format: `schema.table,schema2.table2`. A bare `table` entry applies across schemas. When set in multi-DB mode, unqualified table references (no schema prefix) are rejected.
 - `MYSQL_DISABLE_READ_ONLY_TRANSACTIONS`: **[NEW]** Disable read-only transaction enforcement (default: "false") ⚠️ **Security Warning:** Only enable this if you need full write capabilities and trust the LLM with your database
 - `SCHEMA_INSERT_PERMISSIONS`: Schema-specific INSERT permissions
 - `SCHEMA_UPDATE_PERMISSIONS`: Schema-specific UPDATE permissions
 - `SCHEMA_DELETE_PERMISSIONS`: Schema-specific DELETE permissions
 - `SCHEMA_DDL_PERMISSIONS`: Schema-specific DDL permissions
 - `MULTI_DB_WRITE_MODE`: Enable write operations in multi-DB mode (default: "false")
+
+#### Table denylist safety notes
+
+`MYSQL_TABLE_DENYLIST` is a **guardrail**, not a complete security boundary.
+
+For strong guarantees (e.g. preventing access to password hashes), also enforce least privilege at the database level (use a dedicated MySQL user with no `SELECT` on sensitive tables).
 
 ### Monitoring Configuration
 
@@ -692,7 +695,7 @@ OPENAI_API_KEY=your-key  npx mcp-eval evals.ts index.ts
    }
    ```
 
-   *Where can I find my `node` bin path*
+   _Where can I find my `node` bin path_
    Run the following command to get it:
 
    For **PATH**
@@ -730,9 +733,7 @@ OPENAI_API_KEY=your-key  npx mcp-eval evals.ts index.ts
        "mcpServers": {
          "mcp_server_mysql": {
            "command": "/full/path/to/node",
-           "args": [
-             "/full/path/to/mcp-server-mysql/dist/index.js"
-           ],
+           "args": ["/full/path/to/mcp-server-mysql/dist/index.js"],
            "env": {
              "MYSQL_HOST": "127.0.0.1",
              "MYSQL_PORT": "3306",

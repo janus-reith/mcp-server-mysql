@@ -1,6 +1,9 @@
 import * as dotenv from "dotenv";
 import { SchemaPermissions } from "../types/index.js";
-import { parseSchemaPermissions, parseMySQLConnectionString } from "../utils/index.js";
+import {
+  parseSchemaPermissions,
+  parseMySQLConnectionString,
+} from "../utils/index.js";
 
 export const MCP_VERSION = "2.0.2";
 
@@ -28,8 +31,38 @@ export const ALLOW_DELETE_OPERATION =
 export const ALLOW_DDL_OPERATION = process.env.ALLOW_DDL_OPERATION === "true";
 
 // Transaction mode control
-export const MYSQL_DISABLE_READ_ONLY_TRANSACTIONS = 
+export const MYSQL_DISABLE_READ_ONLY_TRANSACTIONS =
   process.env.MYSQL_DISABLE_READ_ONLY_TRANSACTIONS === "true";
+
+// Table denylist (defense-in-depth)
+// Format (recommended): "schema.table,schema2.table2".
+// If an entry is just "table", it applies across schemas.
+function normalizeIdentifierPart(part: string): string {
+  return part.trim().replace(/`/g, "").toLowerCase();
+}
+
+export type DenylistedTable = { schema?: string; table: string };
+
+export const MYSQL_TABLE_DENYLIST: DenylistedTable[] = (
+  process.env.MYSQL_TABLE_DENYLIST || ""
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((entry) => {
+    const cleaned = entry.replace(/\s+/g, "");
+    const parts = cleaned.split(".");
+
+    if (parts.length === 1) {
+      return { table: normalizeIdentifierPart(parts[0]) };
+    }
+
+    // If more than one '.', join the rest into a table name. This is defensive
+    // (MySQL identifiers typically don't include '.').
+    const schema = normalizeIdentifierPart(parts[0]);
+    const table = normalizeIdentifierPart(parts.slice(1).join("."));
+    return { schema, table };
+  });
 
 // Schema-specific permissions
 export const SCHEMA_INSERT_PERMISSIONS: SchemaPermissions =
@@ -48,7 +81,8 @@ export const REMOTE_SECRET_KEY = process.env.REMOTE_SECRET_KEY || "";
 export const PORT = process.env.PORT || 3000;
 
 // Check if we're in multi-DB mode (no specific DB set)
-const dbFromEnvOrConnString = connectionStringConfig.database || process.env.MYSQL_DB;
+const dbFromEnvOrConnString =
+  connectionStringConfig.database || process.env.MYSQL_DB;
 export const isMultiDbMode =
   !dbFromEnvOrConnString || dbFromEnvOrConnString.trim() === "";
 
@@ -62,11 +96,17 @@ export const mcpConfig = {
     // Use Unix socket if provided (connection string takes precedence), otherwise use host/port
     ...(connectionStringConfig.socketPath || process.env.MYSQL_SOCKET_PATH
       ? {
-          socketPath: connectionStringConfig.socketPath || process.env.MYSQL_SOCKET_PATH,
+          socketPath:
+            connectionStringConfig.socketPath || process.env.MYSQL_SOCKET_PATH,
         }
       : {
-          host: connectionStringConfig.host || process.env.MYSQL_HOST || "127.0.0.1",
-          port: connectionStringConfig.port || Number(process.env.MYSQL_PORT || "3306"),
+          host:
+            connectionStringConfig.host ||
+            process.env.MYSQL_HOST ||
+            "127.0.0.1",
+          port:
+            connectionStringConfig.port ||
+            Number(process.env.MYSQL_PORT || "3306"),
         }),
     user: connectionStringConfig.user || process.env.MYSQL_USER || "root",
     password:
@@ -75,13 +115,18 @@ export const mcpConfig = {
         : process.env.MYSQL_PASS === undefined
           ? ""
           : process.env.MYSQL_PASS,
-    database: connectionStringConfig.database || process.env.MYSQL_DB || undefined, // Allow undefined database for multi-DB mode
+    database:
+      connectionStringConfig.database || process.env.MYSQL_DB || undefined, // Allow undefined database for multi-DB mode
     connectionLimit: 10,
     waitForConnections: true,
-    queueLimit: process.env.MYSQL_QUEUE_LIMIT ? parseInt(process.env.MYSQL_QUEUE_LIMIT, 10) : 100,
+    queueLimit: process.env.MYSQL_QUEUE_LIMIT
+      ? parseInt(process.env.MYSQL_QUEUE_LIMIT, 10)
+      : 100,
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
-    connectTimeout: process.env.MYSQL_CONNECT_TIMEOUT ? parseInt(process.env.MYSQL_CONNECT_TIMEOUT, 10) : 10000,
+    connectTimeout: process.env.MYSQL_CONNECT_TIMEOUT
+      ? parseInt(process.env.MYSQL_CONNECT_TIMEOUT, 10)
+      : 10000,
     authPlugins: {
       mysql_clear_password: () => () =>
         Buffer.from(
@@ -89,7 +134,7 @@ export const mcpConfig = {
             ? connectionStringConfig.password
             : process.env.MYSQL_PASS !== undefined
               ? process.env.MYSQL_PASS
-              : ""
+              : "",
         ),
     },
     ...(process.env.MYSQL_SSL === "true"

@@ -1,9 +1,16 @@
 import * as mysql2 from "mysql2/promise";
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import {
-  executeReadOnlyQuery,
-  executeWriteQuery,
-} from "../../../dist/src/db/index.js";
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from "vitest";
+
+let executeReadOnlyQuery: (sql: string) => Promise<any>;
+let executeWriteQuery: (sql: string) => Promise<any>;
 
 // Create test environment for schema-specific permissions
 describe("Schema-specific Permissions", () => {
@@ -25,6 +32,12 @@ describe("Schema-specific Permissions", () => {
       "test_schema_1:true,test_schema_2:false";
     process.env.SCHEMA_DDL_PERMISSIONS =
       "test_schema_1:true,test_schema_2:false";
+
+    // Import AFTER env is set so config constants are correct in-process
+    vi.resetModules();
+    const mod = await import("../../../src/db/index.js");
+    executeReadOnlyQuery = mod.executeReadOnlyQuery;
+    executeWriteQuery = mod.executeWriteQuery;
 
     // Create connection pool for testing
     const config: any = {
@@ -109,6 +122,10 @@ describe("Schema-specific Permissions", () => {
     delete process.env.SCHEMA_UPDATE_PERMISSIONS;
     delete process.env.SCHEMA_DELETE_PERMISSIONS;
     delete process.env.SCHEMA_DDL_PERMISSIONS;
+    delete process.env.ALLOW_INSERT_OPERATION;
+    delete process.env.ALLOW_UPDATE_OPERATION;
+    delete process.env.ALLOW_DELETE_OPERATION;
+    delete process.env.ALLOW_DDL_OPERATION;
   });
 
   // Test INSERT permission for schema_1 (allowed)
