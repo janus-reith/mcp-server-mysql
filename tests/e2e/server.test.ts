@@ -26,25 +26,39 @@ function createTestClient() {
         description += " (READ-ONLY)";
       }
 
-      return {
-        tools: [
-          {
-            name: "mysql_query",
-            description,
-            inputSchema: {
-              type: "object",
-              properties: {
-                sql: { type: "string" },
-              },
+      const tools: any[] = [
+        {
+          name: "mysql_query_read",
+          description: `${description} (strict read-only tool)`,
+          inputSchema: {
+            type: "object",
+            properties: {
+              sql: { type: "string" },
             },
           },
-        ],
-      };
+        },
+      ];
+
+      // Hide write tool unless at least one write flag is enabled
+      if (allowInsert || allowUpdate || allowDelete) {
+        tools.push({
+          name: "mysql_query_write",
+          description,
+          inputSchema: {
+            type: "object",
+            properties: {
+              sql: { type: "string" },
+            },
+          },
+        });
+      }
+
+      return { tools };
     },
 
     async callTool(name: string, args: any) {
       // Implementation would send the request to the server
-      if (name !== "mysql_query") {
+      if (name !== "mysql_query_read" && name !== "mysql_query_write") {
         throw new Error(`Unknown tool: ${name}`);
       }
 
@@ -82,6 +96,19 @@ function createTestClient() {
         return {
           content: [
             { type: "text", text: "Error: DELETE operations are not allowed." },
+          ],
+          isError: true,
+        };
+      }
+
+      // Strict read tool should never allow writes, even if env allows.
+      if (name === "mysql_query_read" && (isInsert || isUpdate || isDelete)) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error: Statement type(s) not allowed in strict read mode",
+            },
           ],
           isError: true,
         };
@@ -217,13 +244,12 @@ describe("Server", () => {
   it("should list available tools", async () => {
     const result = await client.listTools();
     expect(result.tools).toHaveLength(1);
-    expect(result.tools[0].name).toBe("mysql_query");
-    // By default, should be read-only
+    expect(result.tools[0].name).toBe("mysql_query_read");
     expect(result.tools[0].description).toContain("READ-ONLY");
   });
 
   it("should execute a query tool", async () => {
-    const result = await client.callTool("mysql_query", {
+    const result = await client.callTool("mysql_query_read", {
       sql: "SELECT * FROM test_table",
     });
     expect(result.isError).toBe(false);
@@ -252,7 +278,7 @@ describe("Server", () => {
   // Tests for write operations
   describe("Write Operations", () => {
     it("should block INSERT operations by default", async () => {
-      const result = await client.callTool("mysql_query", {
+      const result = await client.callTool("mysql_query_read", {
         sql: 'INSERT INTO test_table (name) VALUES ("Test Insert")',
       });
 
@@ -263,7 +289,7 @@ describe("Server", () => {
     });
 
     it("should block UPDATE operations by default", async () => {
-      const result = await client.callTool("mysql_query", {
+      const result = await client.callTool("mysql_query_read", {
         sql: 'UPDATE test_table SET name = "Updated" WHERE id = 1',
       });
 
@@ -274,7 +300,7 @@ describe("Server", () => {
     });
 
     it("should block DELETE operations by default", async () => {
-      const result = await client.callTool("mysql_query", {
+      const result = await client.callTool("mysql_query_read", {
         sql: "DELETE FROM test_table WHERE id = 1",
       });
 
@@ -288,7 +314,7 @@ describe("Server", () => {
       // Enable INSERT operations for this test
       process.env.ALLOW_INSERT_OPERATION = "true";
 
-      const result = await client.callTool("mysql_query", {
+      const result = await client.callTool("mysql_query_write", {
         sql: 'INSERT INTO test_table (name) VALUES ("Test Insert")',
       });
 
@@ -303,7 +329,7 @@ describe("Server", () => {
       // Enable UPDATE operations for this test
       process.env.ALLOW_UPDATE_OPERATION = "true";
 
-      const result = await client.callTool("mysql_query", {
+      const result = await client.callTool("mysql_query_write", {
         sql: 'UPDATE test_table SET name = "Updated" WHERE id = 1',
       });
 
@@ -318,7 +344,7 @@ describe("Server", () => {
       // Enable DELETE operations for this test
       process.env.ALLOW_DELETE_OPERATION = "true";
 
-      const result = await client.callTool("mysql_query", {
+      const result = await client.callTool("mysql_query_write", {
         sql: "DELETE FROM test_table WHERE id = 1",
       });
 
@@ -337,10 +363,16 @@ describe("Server", () => {
 
       const result = await client.listTools();
 
-      expect(result.tools[0].description).toContain("INSERT");
-      expect(result.tools[0].description).toContain("UPDATE");
-      expect(result.tools[0].description).toContain("DELETE");
-      expect(result.tools[0].description).not.toContain("READ-ONLY");
+      expect(
+        result.tools.some((t: any) => t.name === "mysql_query_write"),
+      ).toBe(true);
+      const writeTool = result.tools.find(
+        (t: any) => t.name === "mysql_query_write",
+      );
+      expect(writeTool.description).toContain("INSERT");
+      expect(writeTool.description).toContain("UPDATE");
+      expect(writeTool.description).toContain("DELETE");
+      expect(writeTool.description).not.toContain("READ-ONLY");
 
       // Reset the flags
       process.env.ALLOW_INSERT_OPERATION = "false";
@@ -349,4 +381,3 @@ describe("Server", () => {
     });
   });
 });
-

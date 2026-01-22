@@ -34,6 +34,7 @@ import {
   getPool,
   executeQuery,
   executeReadOnlyQuery,
+  executeStrictReadOnlyQuery,
   poolPromise,
 } from "./src/db/index.js";
 
@@ -92,6 +93,21 @@ if (
   toolDescription += " (READ-ONLY)";
 }
 
+const readToolName = "mysql_query_read";
+const writeToolName = "mysql_query_write";
+
+const readToolDescription = `${toolDescription} (strict read-only tool)`;
+
+// Enable write tool only when env allows at least one write op AND (if multi-DB) safety gate is enabled
+const anyWriteEnabled =
+  ALLOW_INSERT_OPERATION ||
+  ALLOW_UPDATE_OPERATION ||
+  ALLOW_DELETE_OPERATION ||
+  ALLOW_DDL_OPERATION;
+const multiDbWriteGateEnabled =
+  !isMultiDbMode || process.env.MULTI_DB_WRITE_MODE === "true";
+const exposeWriteTool = anyWriteEnabled && multiDbWriteGateEnabled;
+
 // @INFO: Add debug logging for configuration
 log(
   "info",
@@ -142,19 +158,37 @@ export default function createMcpServer({
       capabilities: {
         resources: {},
         tools: {
-          mysql_query: {
-            description: toolDescription,
+          [readToolName]: {
+            description: readToolDescription,
             inputSchema: {
               type: "object",
               properties: {
                 sql: {
                   type: "string",
-                  description: "The SQL query to execute",
+                  description: "The SQL query to execute (read-only)",
                 },
               },
               required: ["sql"],
             },
           },
+          ...(exposeWriteTool
+            ? {
+                [writeToolName]: {
+                  description: toolDescription,
+                  inputSchema: {
+                    type: "object",
+                    properties: {
+                      sql: {
+                        type: "string",
+                        description:
+                          "The SQL query to execute (read + optional writes)",
+                      },
+                    },
+                    required: ["sql"],
+                  },
+                },
+              }
+            : {}),
         },
       },
     },
@@ -300,12 +334,28 @@ export default function createMcpServer({
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       log("info", "Handling CallToolRequest:", request.params.name);
-      if (request.params.name !== "mysql_query") {
-        throw new Error(`Unknown tool: ${request.params.name}`);
+      const sql = request.params.arguments?.sql as string;
+
+      if (request.params.name === readToolName) {
+        return await executeStrictReadOnlyQuery(sql);
       }
 
-      const sql = request.params.arguments?.sql as string;
-      return await executeReadOnlyQuery(sql);
+      if (request.params.name === writeToolName) {
+        if (!exposeWriteTool) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: mysql_query_write is not enabled by server configuration (ALLOW_* and/or MULTI_DB_WRITE_MODE)",
+              },
+            ],
+            isError: true,
+          };
+        }
+        return await executeReadOnlyQuery(sql);
+      }
+
+      throw new Error(`Unknown tool: ${request.params.name}`);
     } catch (err) {
       const error = err as Error;
       log("error", "Error in CallToolRequest handler:", error);
@@ -328,19 +378,38 @@ export default function createMcpServer({
     const toolsResponse = {
       tools: [
         {
-          name: "mysql_query",
-          description: toolDescription,
+          name: readToolName,
+          description: readToolDescription,
           inputSchema: {
             type: "object",
             properties: {
               sql: {
                 type: "string",
-                description: "The SQL query to execute",
+                description: "The SQL query to execute (read-only)",
               },
             },
             required: ["sql"],
           },
         },
+        ...(exposeWriteTool
+          ? [
+              {
+                name: writeToolName,
+                description: toolDescription,
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    sql: {
+                      type: "string",
+                      description:
+                        "The SQL query to execute (read + optional writes)",
+                    },
+                  },
+                  required: ["sql"],
+                },
+              },
+            ]
+          : []),
       ],
     };
 

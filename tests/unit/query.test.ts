@@ -9,6 +9,7 @@ let executeQuery: (
 ) => Promise<unknown>;
 let executeReadOnlyQuery: (sql: string) => Promise<unknown>;
 let executeWriteQuery: (sql: string) => Promise<unknown>;
+let executeStrictReadOnlyQuery: (sql: string) => Promise<unknown>;
 
 type McpToolResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -72,6 +73,7 @@ describe("Query Functions", () => {
     executeQuery = mod.executeQuery;
     executeReadOnlyQuery = mod.executeReadOnlyQuery;
     executeWriteQuery = mod.executeWriteQuery;
+    executeStrictReadOnlyQuery = mod.executeStrictReadOnlyQuery;
   });
 
   beforeEach(async () => {
@@ -204,6 +206,69 @@ describe("Query Functions", () => {
       expect(result.content[0].text).toContain(
         "DELETE operations are not allowed",
       );
+    });
+  });
+
+  describe("executeStrictReadOnlyQuery", () => {
+    it("should execute a SELECT query and return results", async () => {
+      const mockResults = [{ id: 1, name: "Test" }];
+      mockConnection.query.mockResolvedValue([mockResults, null]);
+
+      const result = await executeStrictReadOnlyQuery("SELECT * FROM test");
+
+      expect(mockConnection.query).toHaveBeenCalledWith(
+        "SET SESSION TRANSACTION READ ONLY",
+      );
+      expect(mockConnection.beginTransaction).toHaveBeenCalled();
+      expect(mockConnection.query).toHaveBeenCalledWith("SELECT * FROM test");
+      expect(mockConnection.rollback).toHaveBeenCalled();
+      expect(mockConnection.query).toHaveBeenCalledWith(
+        "SET SESSION TRANSACTION READ WRITE",
+      );
+      expect(mockConnection.release).toHaveBeenCalled();
+
+      expect(result).toEqual({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(mockResults, null, 2),
+          },
+          {
+            type: "text",
+            text: expect.stringContaining("Query execution time:"),
+          },
+        ],
+        isError: false,
+      });
+    });
+
+    it("should block INSERT even if write flags are enabled", async () => {
+      vi.stubEnv("ALLOW_INSERT_OPERATION", "true");
+      const result = (await executeStrictReadOnlyQuery(
+        'INSERT INTO test (name) VALUES ("x")',
+      )) as unknown;
+
+      expect(isMcpToolResult(result)).toBe(true);
+      if (!isMcpToolResult(result)) throw new Error("Unexpected result shape");
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        "not allowed in strict read mode",
+      );
+      expect(mockConnection.beginTransaction).not.toHaveBeenCalled();
+    });
+
+    it("should block SELECT ... INTO OUTFILE", async () => {
+      const result = (await executeStrictReadOnlyQuery(
+        "SELECT 1 INTO OUTFILE '/tmp/x'",
+      )) as unknown;
+
+      expect(isMcpToolResult(result)).toBe(true);
+      if (!isMcpToolResult(result)) throw new Error("Unexpected result shape");
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("OUTFILE");
+      expect(mockConnection.beginTransaction).not.toHaveBeenCalled();
     });
   });
 

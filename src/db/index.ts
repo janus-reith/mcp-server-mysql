@@ -185,6 +185,8 @@ async function executeWriteQuery<T>(sql: string): Promise<T> {
 }
 
 async function executeReadOnlyQuery<T>(sql: string): Promise<T> {
+  // NOTE: despite the name, this function historically handled BOTH read queries
+  // and (when permitted) write queries. It is used by the write-capable MCP tool.
   let connection: mysql2.PoolConnection | undefined;
   try {
     // Denylist enforcement (defense-in-depth)
@@ -301,7 +303,86 @@ async function executeReadOnlyQuery<T>(sql: string): Promise<T> {
       return executeWriteQuery(sql);
     }
 
-    // For read-only operations, continue with the original logic
+    // For read-only operations, run inside a read-only transaction
+    return executeReadTransactionQuery(sql);
+  } catch (error) {
+    // Ensure we rollback and reset transaction mode on any error
+    log("error", "Error in read-only query transaction:", error);
+    try {
+      if (connection) {
+        await connection.rollback();
+        // Reset to read-write mode (only if we set it to read-only)
+        if (!MYSQL_DISABLE_READ_ONLY_TRANSACTIONS) {
+          await connection.query("SET SESSION TRANSACTION READ WRITE");
+        }
+      }
+    } catch (cleanupError) {
+      // Ignore errors during cleanup
+      log("error", "Error during cleanup:", cleanupError);
+    }
+    throw error;
+  } finally {
+    if (connection) {
+      connection.release();
+      log("error", "Read-only connection released");
+    }
+  }
+}
+
+const STRICT_READ_ALLOWED_TYPES = new Set([
+  "select",
+  "show",
+  "describe",
+  "explain",
+]);
+
+async function isStrictReadOnlySql(sql: string): Promise<{
+  ok: boolean;
+  reason?: string;
+}> {
+  const queryTypes = await getQueryTypes(sql);
+  const unknown = queryTypes.filter((t) => !STRICT_READ_ALLOWED_TYPES.has(t));
+  if (unknown.length) {
+    return {
+      ok: false,
+      reason: `Statement type(s) not allowed in strict read mode: ${unknown.join(", ")}`,
+    };
+  }
+
+  // Even though this is a SELECT, it can write to the filesystem.
+  if (/\bINTO\s+(?:OUTFILE|DUMPFILE)\b/i.test(sql)) {
+    return {
+      ok: false,
+      reason: "SELECT ... INTO OUTFILE/DUMPFILE is not allowed",
+    };
+  }
+
+  return { ok: true };
+}
+
+async function executeReadTransactionQuery<T>(sql: string): Promise<T> {
+  let connection: mysql2.PoolConnection | undefined;
+  try {
+    // Denylist enforcement (defense-in-depth)
+    const defaultSchema = process.env.MYSQL_DB || null;
+    const denyCheck = isQueryBlockedByDenylist({
+      sql,
+      denylist: MYSQL_TABLE_DENYLIST,
+      defaultSchema,
+      multiDbMode: isMultiDbMode,
+    });
+    if (denyCheck.blocked) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: ${denyCheck.reason || "Query blocked by MYSQL_TABLE_DENYLIST"}`,
+          },
+        ],
+        isError: true,
+      } as T;
+    }
+
     const pool = await getPool();
     connection = await pool.getConnection();
     log("error", "Read-only connection acquired");
@@ -320,7 +401,6 @@ async function executeReadOnlyQuery<T>(sql: string): Promise<T> {
     await connection.beginTransaction();
 
     try {
-      // Execute query - in multi-DB mode, we may need to handle USE statements specially
       const startTime = performance.now();
       const result = await connection.query(sql);
       const endTime = performance.now();
@@ -349,24 +429,20 @@ async function executeReadOnlyQuery<T>(sql: string): Promise<T> {
         isError: false,
       } as T;
     } catch (error) {
-      // Rollback transaction on query error
       log("error", "Error executing read-only query:", error);
       await connection.rollback();
       throw error;
     }
   } catch (error) {
-    // Ensure we rollback and reset transaction mode on any error
     log("error", "Error in read-only query transaction:", error);
     try {
       if (connection) {
         await connection.rollback();
-        // Reset to read-write mode (only if we set it to read-only)
         if (!MYSQL_DISABLE_READ_ONLY_TRANSACTIONS) {
           await connection.query("SET SESSION TRANSACTION READ WRITE");
         }
       }
     } catch (cleanupError) {
-      // Ignore errors during cleanup
       log("error", "Error during cleanup:", cleanupError);
     }
     throw error;
@@ -378,6 +454,22 @@ async function executeReadOnlyQuery<T>(sql: string): Promise<T> {
   }
 }
 
+async function executeStrictReadOnlyQuery<T>(sql: string): Promise<T> {
+  const check = await isStrictReadOnlySql(sql);
+  if (!check.ok) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Error: ${check.reason || "Query is not allowed in strict read mode"}`,
+        },
+      ],
+      isError: true,
+    } as T;
+  }
+  return executeReadTransactionQuery(sql);
+}
+
 export {
   isTestEnvironment,
   safeExit,
@@ -385,5 +477,6 @@ export {
   getPool,
   executeWriteQuery,
   executeReadOnlyQuery,
+  executeStrictReadOnlyQuery,
   poolPromise,
 };

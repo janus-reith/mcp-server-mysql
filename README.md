@@ -371,18 +371,22 @@ To run in remote mode, you'll need to provide [environment variables](https://gi
 
 ### Tools
 
-- **mysql_query**
-  - Execute SQL queries against the connected database
+- **mysql_query_read**
+  - Execute **strict read-only** SQL queries against MySQL
   - Input: `sql` (string): The SQL query to execute
-  - By default, limited to READ ONLY operations
-  - Optional write operations (when enabled via configuration):
-    - INSERT: Add new data to tables (requires `ALLOW_INSERT_OPERATION=true`)
-    - UPDATE: Modify existing data (requires `ALLOW_UPDATE_OPERATION=true`)
-    - DELETE: Remove data (requires `ALLOW_DELETE_OPERATION=true`)
-  - All operations are executed within a transaction with proper commit/rollback handling
-  - Supports prepared statements for secure parameter handling
-  - Configurable query timeouts and result pagination
-  - Built-in query execution statistics
+  - Allowed statement types: `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`
+  - Explicitly blocks `SELECT ... INTO OUTFILE` / `DUMPFILE`
+  - Always enforced, regardless of any `ALLOW_*` flags
+
+- **mysql_query_write** (only exposed when enabled)
+  - Execute SQL queries against MySQL, including **optional write operations**
+  - Input: `sql` (string): The SQL query to execute
+  - Exposure rules:
+    - Hidden unless at least one of `ALLOW_INSERT_OPERATION`, `ALLOW_UPDATE_OPERATION`, `ALLOW_DELETE_OPERATION`, `ALLOW_DDL_OPERATION` is `true`
+    - Additionally, in multi-DB mode, requires `MULTI_DB_WRITE_MODE=true` to be exposed
+  - Write authorization is still governed by the existing env + schema permission logic:
+    - Global defaults: `ALLOW_INSERT_OPERATION`, `ALLOW_UPDATE_OPERATION`, `ALLOW_DELETE_OPERATION`, `ALLOW_DDL_OPERATION`
+    - Schema-specific overrides: `SCHEMA_INSERT_PERMISSIONS`, `SCHEMA_UPDATE_PERMISSIONS`, `SCHEMA_DELETE_PERMISSIONS`, `SCHEMA_DDL_PERMISSIONS`
 
 ### Resources
 

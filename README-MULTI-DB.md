@@ -38,7 +38,7 @@ To enable multi-DB mode, simply leave the `MYSQL_DB` environment variable empty:
    ```sql
    -- Use fully qualified table names
    SELECT * FROM database_name.table_name;
-   
+
    -- Or use USE statements to switch between databases
    USE database_name;
    SELECT * FROM table_name;
@@ -46,15 +46,17 @@ To enable multi-DB mode, simply leave the `MYSQL_DB` environment variable empty:
 
 4. **Automatic Read-Only Mode**: For safety, multi-DB mode enforces read-only operations by default. This can be customized using schema-specific permissions (see below).
 
+   **Tooling note:** In multi-DB mode, the server only exposes the write-capable tool (`mysql_query_write`) when `MULTI_DB_WRITE_MODE=true` _and_ at least one `ALLOW_*_OPERATION` flag is enabled. The strict read tool (`mysql_query_read`) is always exposed.
+
 5. **Database Exploration**: You can explore databases using commands like:
 
    ```sql
    -- List all databases
    SHOW DATABASES;
-   
+
    -- List tables in a specific database
    SHOW TABLES FROM database_name;
-   
+
    -- Describe a table's structure
    DESCRIBE database_name.table_name;
    ```
@@ -103,13 +105,13 @@ Here's a complete example configuration with schema-specific permissions:
         "MYSQL_USER": "root",
         "MYSQL_PASS": "your_password",
         "MYSQL_DB": "", // Empty for multi-DB mode
-        
+
         // Global defaults (apply when no schema-specific permission is set)
         "ALLOW_INSERT_OPERATION": "false",
         "ALLOW_UPDATE_OPERATION": "false",
         "ALLOW_DELETE_OPERATION": "false",
         "ALLOW_DDL_OPERATION": "false",
-        
+
         // Schema-specific permissions
         "SCHEMA_INSERT_PERMISSIONS": "dev_db:true,test_db:true,prod_db:false",
         "SCHEMA_UPDATE_PERMISSIONS": "dev_db:true,test_db:true,prod_db:false",
