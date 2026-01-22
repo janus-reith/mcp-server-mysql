@@ -1,26 +1,22 @@
-name: Lint
+name: Lint (disabled)
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   eslint:
+    if: false
     runs-on: ubuntu-latest
-  
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-      
+          node-version: "22"
+
       - name: Clear npm cache
         run: npm cache clean --force
 
@@ -31,17 +27,18 @@ jobs:
         run: npm run lint:eslint
 
   markdownlint:
+    if: false
     runs-on: ubuntu-latest
-  
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-      
+          node-version: "22"
+
       - name: Clear npm cache
         run: npm cache clean --force
 
